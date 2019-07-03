@@ -1297,10 +1297,11 @@ file.rds <- file.path(data_dir,sprintf('%s_d%d.rds',name_i,d))
 saveRDS(nets, file = file.rds)
 ```
 
-Next, in [Part 4](#part-4-estimate-tergm  "Part 4") compute a TERGM with the udpated data you just computed.
+Next, in [Part 4](#part-4-estimate-tergm  "Part 4") compute a TERGM with the data lists that were just computed.
 
 
 > [Back to Contents](#contents  "Back")
+
 
 
 
