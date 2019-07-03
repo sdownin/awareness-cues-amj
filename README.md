@@ -33,73 +33,43 @@ This research was supported in part by the Taiwan Ministry of Science and Techno
 > [Back to Contents](#contents  "Back")
 
 
-
-In this repository's `R` directory, download the R script `amj_run_TERGM_tutorial_3.R`. 
-
-Create a new folder in your `data_dir` and title it `owler_dir`. If you want to change the name of this new folder, then don't forget to update the `owler_data` variable in the `amj_run_TERGM_tutorial_3.R` script.
-
-Download your owler data file(s) as a CSV file(s) from the Google Doc
-
-- [COMPNET-MASTER Owler Data](https://docs.google.com/spreadsheets/d/1jmOI_byTPlznzbbkIcgCRZ2SbvLzs2q9SI6rI8xJFE0/edit?usp=sharing "Google Doc") 
-
-and save them in your `owler_dir` directory. 
-
-You can download 1 or multiple CSV files; the script below can process 1 file and also combine multiple files.
-
-
 ```r
 ##===============================
 ## SET YOUR DIRECTORIES:
 ##   This is the path to the folder where you saved the data file.
 ##   If you are using a Windows PC, use double backslash path separators "..\\dir\\subdir\\.."
 ##-------------------------------
-## working dir
-work_dir <- '/set/working/dir'
+## DIRECTORIES
+data_dir <- "/set/data/dir"
+work_dir <- "/set/working/dir"
+img_dir  <- "/set/image/dir"
+version_dir <- "/set/version/dir"
+net_dir <- "/set/networks/dir"
+sup_data_dir <- "/set/supplementalData/dir"
+out_dir <- "/set/output/dir"
 
-## new data directory name
-cb_data_dir <- '/set/data/dir'
-
-## owler data directory name
-owler_data_dir_name <- 'owler_data'
-
-## SET FOCAL FIRM
-focal_firm <- 'ford' ## your focal firm
-```
-
-
-
-
-
-Set relative paths for data
-
-
-```r
-##================================
-## Relative paths based on above directories
-##--------------------------------
-## data_dir <- '/set/your/data/directory/here'
-data_dir <- file.path(work_dir, 'data')
-
-## new data directory name
-owler_data_dir <- file.path(data_dir, owler_data_dir_name)
+## set woring dir
+setwd(work_dir)
 ```
 
 Load `R` scripts:
 - `amj_awareness_functions.R` loads functions for data processing; cached in environment as [list] `aaf`
-- `amj_tutorial_cb_data_prep.R` loads data tables; cached in environment as [list] `cb`
+- `amj_cb_data_prep.R` loads CrunchBase data tables; cached in environment as [list] `cb`
+- `amj_sdc_coop.R` loads SDC data tables; cached in environment as [list] `sdc`
+- `amj_firm_size_controls.R` loads firm size controls tables; cached in environment as [list] `si`
+- `amj_institutional_holdings.R` loads institutional holdings tables; cached in environment as [list] `ih`
+- `amj_make_full_graph.R` loads global competition network object; cached in environment as [list] `g.full`
 
 This will take several minutes to complete.
 
-
 ```r
-##==================================================
-## Run data loading and prep scripts
-##--------------------------------------------------
-source(file.path(work_dir,'R','amj_awareness_functions.R'))    ## aaf: compnet awareness functions
-```
-
-```r
-source(file.path(work_dir,'R','amj_tutorial_cb_data_prep.R'))  ## cb:  CrunchBase dataframes object
+## LOAD DATA AND DEPENDENCIES
+aaf    <- source(file.path(version_dir,'amj_awareness_functions.R'))$value    ## aaf: awareness functions
+cb     <- source(file.path(version_dir,'amj_cb_data_prep.R'))$value           ## cb : CrunchBase
+sdc    <- source(file.path(version_dir,'amj_sdc_coop.R'))$value               ## sdc: Thompson SDC
+si     <- source(file.path(version_dir,'amj_firm_size_controls.R'))$value     ## si : size controls from mergent intellect
+ih     <- source(file.path(version_dir,'amj_institutional_holdings.R'))$value ## ih : institutional holdings
+g.full <- source(file.path(version_dir,'amj_make_full_graph.R'))$value        ## g.full : full competition graph
 ```
 
 ```
@@ -193,8 +163,6 @@ print(summary(cb))
 # Part 2: Create Global Competition Network
 
 > [Back to Contents](#contents  "Back")
-
-
 
 
 Create the full competition network (graph) for all competitive relations at all times. The following step after this will then create competition network panels with one competition network per time period by removing the relations and firms that didn't exist during that period.
@@ -698,12 +666,12 @@ Next, in [Part 4](#part-4-estimate-tergm  "Part 4") compute a TERGM with the udp
 
 > [Back to Contents](#contents  "Back")
 
-In this repository's `R` directory, download the R script `amj_run_TERGM_tutorial_1.R`. 
+In this repository's `R` directory, refer to the R script `amj_TERGM_estimate.R`. 
 
 Download and save the following RDS (serialized) data file     
-- [tutorial_d2_competition_network_sample.rds](https://drive.google.com/file/d/1DcpV0tomKyeY4BUsWcBZ1WSOIYOxPYMG/view?usp=sharing "Example Competition Network Sample")
+- [Firm Network Serialized Data](https://drive.google.com/drive/folders/18bE99uD-TVgkeGR501Sh_VvAhc6D6Bgn?usp=sharing "Firm Network Serialized Data")
 
-in the same directory that you save the above script. You can run the script in its entirety simply to get the results, but an explanation of each part is provided below in case you want to change the analysis. 
+in the same directory that you save the above script. You can run the script in its entirety to get the results.
 
 Set the name of the directory where you saved the data file:
 
@@ -725,7 +693,7 @@ d <- 2                 ## ego network theshold (order)
 
 ## load RDS data file into memory as a list of networks
 # data_file <- file.path(data_dir,sprintf('%s_d%s.rds',firm_i,d))
-data_file <- file.path(data_dir, 'tutorial_d2_competition_network_sample.rds')
+data_file <- "data_file_name.rds"  ## set data file name
 nets.all <- readRDS(data_file)
 len <- length(nets.all)
 
@@ -908,7 +876,7 @@ htmlreg(fits, digits = 3, file=compare_file)
 
 > [Back to Contents](#contents  "Back")
 
-Continue using the R script `amj_run_TERGM_tutorial_1.R`. 
+Continue using the R script `amj_TERGM_estimate.R`. 
 
 Check goodness of fit for the following diagnostic statistics by simulating `nsim` number of random networks from model `m0`:
 - `dsp` dyad-wise shared partners
@@ -1475,9 +1443,9 @@ plot(gof1)
 
 > [Back to Contents](#contents  "Back")
 
-For instructional purposes, we will only compare the estamation algorithm for the first model `m0`.  You may repeat the same steps as needed to compare other models.
+Compare the estamation algorithm for the model `m4`.  You may repeat the same steps as needed to compare other models.
 
-Compute the first model `m0` again using MCMCMLE (instead of bootstrapped PMLE) and save to disk as an RDS (serialized) file:
+Compute the first model `m4` again using MCMCMLE (instead of bootstrapped PMLE) and save to disk as an RDS (serialized) file:
 
 ```r
 ## set pseudorandom number generator seed for reproducibility

@@ -2,7 +2,9 @@
 title: "awareness-cues-amj-123"
 author: "Stephen Downing"
 date: "7/3/2019"
-output: html_document
+output: 
+  html_document: 
+    keep_md: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -29,6 +31,8 @@ out_dir <- "C:/Users/T430/Google Drive/PhD/Dissertation/competition networks/awa
 ## set woring dir
 setwd(work_dir)
 ```
+
+
 
 
 ```{r deps}
@@ -239,3 +243,4 @@ for (i in 1:length(firms.todo)) {
 
 
 ```
+
