@@ -18,9 +18,9 @@ This research was supported in part by the Taiwan Ministry of Science and Techno
 - [Compare TERGM vs. SAOM](https://www.cambridge.org/core/services/aop-cambridge-core/content/view/85F5AB6B84B2D49B05A5D24F4A018E88/S2050124218000267a.pdf/theoretical_and_empirical_comparison_of_the_temporal_exponential_random_graph_model_and_the_stochastic_actororiented_model.pdf "link")
 
 #### Contents
-- [Part 1: Prepare Data](#part-1-preparing-data  "Part 1")
+- [Part 1: Prepare Data](#part-1-prepare-data  "Part 1")
 - [Part 2: Create Global Competition Network](#part-2-create-global-competition-network  "Part 2")
-- [Part 3: Compute Period Networks and Covariate Lists](#part-3-compute-period-networks-and-covariate-lists  "Part 3")
+- [Part 3: Compute Awareness Cues and Covariate Lists](#part-3-compute-awareness-cues-and-covariate-lists  "Part 3")
 - [Part 4: Estimate TERGM](#part-4-estimate-tergm  "Part 4")
 - [Part 5: Goodness of Fit](#part-5-goodness-of-fit  "Part 5")
 - [Part 6: Estimation Algorithm](#part-6-estimation-algorithm  "Part 6")
