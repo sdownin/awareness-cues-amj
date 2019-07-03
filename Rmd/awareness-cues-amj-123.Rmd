@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Markdown for Parts 1,2,3 of Awareness Cues computations. 
 
-```{r main}
+```{r dir}
 library(igraph)
 library(intergraph)
 
@@ -28,7 +28,10 @@ out_dir <- "C:/Users/T430/Google Drive/PhD/Dissertation/competition networks/awa
 
 ## set woring dir
 setwd(work_dir)
+```
 
+
+```{r deps}
 ## LOAD DATA AND DEPENDENCIES
 aaf    <- source(file.path(version_dir,'amj_awareness_functions.R'))$value    ## aaf: awareness functions
 cb     <- source(file.path(version_dir,'amj_cb_data_prep.R'))$value           ## cb : CrunchBase
@@ -36,7 +39,12 @@ sdc    <- source(file.path(version_dir,'amj_sdc_coop.R'))$value               ##
 si     <- source(file.path(version_dir,'amj_firm_size_controls.R'))$value     ## si : size controls from mergent intellect
 ih     <- source(file.path(version_dir,'amj_institutional_holdings.R'))$value ## ih : institutional holdings
 g.full <- source(file.path(version_dir,'amj_make_full_graph.R'))$value        ## g.full : full competition graph
+```
 
+
+
+
+```{r main}
 # ## set firms to create networks (focal firm or replication study focal firms)
 firms.todo <- c(
   'qualtrics',
