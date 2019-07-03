@@ -2,7 +2,7 @@
 
 This repository contains R scripts and links to serialized data files for computations used in 
 
- * Downing, Kang, & Markman (Forthcoming) "What you don't see can hurt you: Awareness cues to profile indirect competitors."
+ * Downing, Kang, & Markman (Forthcoming) "What you don't see can hurt you: Awareness cues to profile indirect competitors." _Academy of Management Journal_.
 
 
 #### Acknowledgement
