@@ -1,0 +1,233 @@
+---
+title: "awareness-cues-amj-123"
+author: "Stephen Downing"
+date: "7/3/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Awareness Cues AMJ Parts 1,2,3
+
+Markdown for Parts 1,2,3 of Awareness Cues computations. 
+
+```{r main}
+library(igraph)
+library(intergraph)
+
+## DIRECTORIES
+data_dir <- "C:/Users/T430/Google Drive/PhD/Dissertation/crunchbase/crunchbase_export_20161024"
+work_dir <- "C:/Users/T430/Google Drive/PhD/Dissertation/competition networks/compnet2"
+img_dir  <- "C:/Users/T430/Google Drive/PhD/Dissertation/competition networks/envelopment/img"
+version_dir <- file.path(work_dir,'R','awareness_amj_rnr2')
+net_dir <- file.path(work_dir,'firm_nets_rnr2','firmctrl')
+sup_data_dir <- file.path(work_dir,'amj_rnr2_sup_data')  ## supplmental data dir
+out_dir <- "C:/Users/T430/Google Drive/PhD/Dissertation/competition networks/awareness-cues-amj"
+
+## set woring dir
+setwd(work_dir)
+
+## LOAD DATA AND DEPENDENCIES
+aaf    <- source(file.path(version_dir,'amj_awareness_functions.R'))$value    ## aaf: awareness functions
+cb     <- source(file.path(version_dir,'amj_cb_data_prep.R'))$value           ## cb : CrunchBase
+sdc    <- source(file.path(version_dir,'amj_sdc_coop.R'))$value               ## sdc: Thompson SDC
+si     <- source(file.path(version_dir,'amj_firm_size_controls.R'))$value     ## si : size controls from mergent intellect
+ih     <- source(file.path(version_dir,'amj_institutional_holdings.R'))$value ## ih : institutional holdings
+g.full <- source(file.path(version_dir,'amj_make_full_graph.R'))$value        ## g.full : full competition graph
+
+# ## set firms to create networks (focal firm or replication study focal firms)
+firms.todo <- c(
+  'qualtrics',
+  'checkmarket',
+  'clarabridge',
+  'cloudcherry',
+  'confirmit',
+  'customergauge',
+  'cx-index',
+  'empathica',
+  'feedback-lite',
+  'first-mile-geo',
+  'getfeedback',
+  'inqwise',
+  'leaderamp',
+  'medallia',
+  'myfeelback',
+  'promoter-io',
+  'satmetrix',
+  'snap-surveys-ltd',
+  'super-simple-survey',
+  'survata',
+  'surveyrock',
+  'typeform',
+  'userate',
+  'verint',
+  'voice-polls'
+)
+
+## -- settings --
+d <- 2
+yrpd <- 1
+startYr <- 2005
+endYr <- 2017            ## dropping first for memory term; actual dates 2007-2016
+lg.cutoff <- 1100        ## large network size cutoff to save periods seprately 
+force.overwrite <- FALSE ## if network files in directory should be overwritten
+## --------------  
+
+
+##
+## run main network period creation loop
+##
+for (i in 1:length(firms.todo)) {
+  if (i > 1) break ## only run first firm then stop
+
+  name_i <- firms.todo[i]
+  cat(sprintf('\n\n------------ %s -------------\n\n',name_i))
+  periods <- seq(startYr,endYr,yrpd)
+  company.name <- 'company_name_unique'
+  g.base <- g.full  
+  
+  ## focal firm ego network sample
+  g.d.sub <- igraph::make_ego_graph(graph = g.base, nodes = V(g.base)[V(g.base)$name==name_i], order = d, mode = 'all')[[1]]
+  
+  ## convert to network object
+  net.d.sub <- asNetwork(g.d.sub)
+  net <- net.d.sub
+  net %n% 'ego' <- name_i
+  
+  ##------------------------------------------------------
+  ##-------preprocess parent-subsidiary relationships-----
+  ##----------node collapse like acquisitions-------------
+  ##------------------------------------------------------
+  cat(' collapsing parent-subsidiary relations...')
+  ## load in manually checked parent-subsidiary relations
+  # dfpar.xl <- file.path(sup_data_dir, 'private_firm_financials_all_firm_networks_delete_nodes.xlsx')
+  # dfpar <- read_excel(dfpar.xl,  na = c('','-',"'-"))
+  dfpar.csv <- file.path(sup_data_dir, 'private_firm_financials_all_firm_networks_delete_nodes.csv')
+  dfpar <- read.csv(dfpar.csv, na.strings = c('','-',"'-","--"), stringsAsFactors = F)
+  dfpar <- dfpar[!is.na(dfpar$parent), ]
+  dfpar$parent <- str_to_lower(dfpar$parent)
+  ## merge in parent uuid
+  .parent.uuid <- cb$co[,c('company_name_unique','company_uuid')]
+  names(.parent.uuid) <- c('parent_name_unique', 'parent_uuid') 
+  dfpar <- merge(dfpar[,c('parent','firm')], .parent.uuid, by.x='parent', by.y='parent_name_unique', all.x=T, all.y=F)
+  ## merge in firm uuid
+  .firm.uuid <- cb$co[,c('company_name_unique','company_uuid')]
+  dfpar <- merge(dfpar, .firm.uuid, by.x='firm', by.y='company_name_unique', all.x=T, all.y=F)
+  ## CrunchBase parent relationships to collapse
+  cb.par <- cb$co_parent[,c('company_name_unique','parent_name_unique','parent_org_uuid','org_uuid')]
+  names(cb.par) <- c('firm','parent','parent_uuid','company_uuid')
+  ## combine CrunchBase and manual parent-child mappings
+  par.chi <- rbind(dfpar, cb.par)
+  ## filter both parent, child in full graph
+  gfuuid <- V(g.d.sub)$company_uuid
+  par.chi <- par.chi[which(!is.na(par.chi$parent_uuid) & par.chi$parent_uuid %in% gfuuid 
+                           & !is.na(par.chi$company_uuid) & par.chi$company_uuid %in% gfuuid), ]
+  ## merge in founded_on date of parent
+  par.chi <- merge(par.chi, cb$co[,c('company_name_unique','founded_on')], by.x='parent', by.y='company_name_unique', all.x=T, all.y=F)
+  ## quasi-node collapse subsidiaries to parent nodes
+  par.chi.nc <- data.frame(
+    acquirer_uuid=par.chi$parent_uuid,
+    acquiree_uuid=par.chi$company_uuid,
+    acquired_on=par.chi$founded_on,   ## for parent-subsidiary mapping, just use parent company founded_on date
+    stringsAsFactors = F
+  )
+  g.d.sub <- aaf$nodeCollapseGraph(g.d.sub, par.chi.nc, remove.isolates=T, verbose = T)
+  
+  cat('done.\n')
+  
+  ##_-----------------------------------------------------
+  ##-------process pre-start-year acquisitions------------
+  ##------------------------------------------------------
+  acqs.pd <- cb$co_acq[cb$co_acq$acquired_on <= sprintf('%d-12-31',startYr-1), ]
+  g.d.sub <- aaf$nodeCollapseGraph(g.d.sub, acqs.pd, remove.isolates=T, verbose = T)
+  net.d.sub <- asNetwork(g.d.sub)
+  cat(sprintf('v = %d, e = %d\n',vcount(g.d.sub),ecount(g.d.sub)))
+  
+  # ## subset to firms with employees count > 10
+  # idx.employee <- which( !(V(g.d.sub)$employee_count %in% c('NA','-','1-10')) )
+  # g.d.sub <- igraph::induced.subgraph(g.d.sub, vids = V(g.d.sub)[idx.employee])
+  # cat(sprintf('filtered >10 employee count: v = %d, e = %d\n',vcount(g.d.sub),ecount(g.d.sub)))
+  
+  ##------------Network Time Period List--------------------
+  nl <- list()
+  
+  for (t in 2:length(periods)) 
+  {
+    ## period dates
+    cat(sprintf('\n\nmaking period %s-%s:\n', periods[t-1],periods[t]))
+    t1 <- sprintf('%d-01-01',periods[t-1]) ## inclusive start date 'YYYY-MM-DD'
+    t2 <- sprintf('%d-12-31',periods[t-1]) ## inclusive end date 'YYYY-MM-DD'
+    
+    ## check if period network file exists (skip if not force overwrite)
+    file.rds <- file.path(net_dir,sprintf('%s_d%d_y%s.rds',name_i,d,periods[t-1]))
+    if (!force.overwrite & file.exists(file.rds)) {
+      cat(sprintf('file exists: %s\nskipping.\n', file.rds))
+      next
+    }
+    
+    ## period years indicate [start, end) -- start inclusive; end exclusive 
+    
+    ## 1. Node Collapse acquisitions within period
+    acqs.pd <- cb$co_acq[cb$co_acq$acquired_on >= t1 & cb$co_acq$acquired_on <= t2, ]
+    g.d.sub <- aaf$nodeCollapseGraph(g.d.sub, acqs.pd, verbose = T)
+    
+    ## 2. Subset Period Network
+    nl[[t]] <- aaf$makePdNetwork(asNetwork(g.d.sub), periods[t-1], periods[t], isolates.remove = F) 
+    
+    ## 3. Set Covariates for updated Period Network
+    nl[[t]] <- aaf$setCovariates(nl[[t]], periods[t-1], periods[t],
+                                 acq=cb$co_acq, br=cb$co_br, ipo=cb$co_ipo, 
+                                 rou=cb$co_rou, inv_rou=cb$inv_rou, inv=cb$inv,
+                                 coop=sdc, ih=ih, size=si)
+    
+    ## save each period if large network (would exceed memory as full list of time periods)
+    if (vcount(g.d.sub) >= lg.cutoff) {
+      saveRDS(nl[[t]], file = file.rds)
+      nv <- length(nl[[t]]$val)
+      names(nv)[1] <- as.character(periods[t-1])
+      write.csv(nv, file = file.path(out_dir, sprintf('%s_d%s.csv',name_i,d)),append = TRUE)
+      nl[[t]] <- NULL ## remove from memory
+    }
+    
+  }
+  
+  ##---------Small Networks: clean period list and save whole -----------
+  if (vcount(g.d.sub) < lg.cutoff) 
+  {
+    ## ----drop null and skipped periods----
+    nl.bak <- nl
+    nl <- nl[which(sapply(nl, length)>0)]
+    
+    if (length(nl) > 1) {
+      names(nl) <- periods[2:length(periods)]
+    }
+
+    ##--------------- GET TERGM NETS LIST -----------
+    ## only nets with edges > 0
+    if (length(nl) > 1) {
+      nets.all <- nl[2:length(nl)]
+    } else {
+      nets.all <- nl
+    }
+    nets <- nets.all[ which(sapply(nets.all, aaf$getNetEcount) > 0) ]
+    ## record network sizes
+    write.csv(sapply(nets,function(x)length(x$val)), file = file.path(out_dir, sprintf('%s_d%s.csv',name_i,d)))
+    
+    #-------------------------------------------------
+    
+    ## CAREFUL TO OVERWRITE 
+    saveRDS(nets, file = file.path(out_dir, sprintf('%s_d%d.rds',name_i,d)))
+    
+    ## plot covariate summary figures
+    aaf$covSummaryPlot(nets, name_i, net_dir)
+    
+  }
+  
+}
+
+
+
+
+```
