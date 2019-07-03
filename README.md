@@ -74,25 +74,27 @@ g.full <- source(file.path(version_dir,'amj_make_full_graph.R'))$value        ##
 
 ```
 ## 
-## Attaching package: 'magrittr'
-## The following object is masked from 'package:texreg':
-## 
-##     extract
-## 
 ## loading dataframes...done.
-## adding Owler data
-## 1. adding new Owler firms to CrunchBase
-##    adding UUIDs to owler firms...
-## 2. adding attributes from Owler to CrunchBase firms
-## 3. adding acquisitions from Owler to CrunchBase acquisitions table
-## 4. adding IPOs from Owler to CrunchBase IPOs table
-## 5. adding competitors from Owler to CrunchBase competitors table
-## preparing CrunchBase data
+## cleaning data...
 ## Warning: All formats failed to parse. No formats found.
 ## Warning: All formats failed to parse. No formats found.
 ## Warning: All formats failed to parse. No formats found.
-## reshaping acquisitions dataframe...done.
+## 
+  |                                                                       
+  |===============                                                  |  24%
+  |                                                                       
+  |=================================================================| 100%
+## reshaping acquisitions dataframe...                                                                  
+  |                                                                       
+  |=                                                                |   1% 
+  |=================================================================| 100%
+## done.
 ## clearing environment...
+## 
+## loading SDC cooperative relations data...
+## loading firm size controls...
+## loading institutional holdings data...
+##
 ```
 
 ```r
@@ -230,96 +232,192 @@ The steps apply functions loaded in the `aaf` object for each period in the anal
 
 
 ```r
-##==================================================
-##
-##  Create Focal Firm Networks per time period
-##     and compute covariate arrays lists 
-##     from network in each period 
-##
-##--------------------------------------------------
+# ## set firms to create networks (focal firm or replication study focal firms)
+firms.todo <- c(
+  'qualtrics',
+  ## other firm names to process
+)
 
 ## -- settings --
-d <- 3                   ## distance threshold for cohort selection
-yrpd <- 1                ## length of period in years
-startYr <- 2005          ## starting year (including 1 previous year for lag)
+d <- 2
+yrpd <- 1
+startYr <- 2005
 endYr <- 2017            ## dropping first for memory term; actual dates 2007-2016
 lg.cutoff <- 1100        ## large network size cutoff to save periods seprately 
 force.overwrite <- FALSE ## if network files in directory should be overwritten
 ## --------------  
 
 
-##====================================
+##
 ## run main network period creation loop
-##-------------------------------------
-# for (i in 1:length(firms.todo)) {
+##
+for (i in 1:length(firms.todo)) {
+  if (i > 1) break ## only run first firm then stop
 
-name_i <- focal_firm
-
-periods <- seq(startYr,endYr,yrpd)
-company.name <- 'company_name_unique'
-g.base <- g.full  
-
-## focal firm ego network sample
-g.d.sub <- igraph::make_ego_graph(graph = g.base, nodes = V(g.base)[V(g.base)$name==name_i], order = d, mode = 'all')[[1]]
-
-## convert to network object
-net.d.sub <- asNetwork(g.d.sub)
-net <- net.d.sub
-net %n% 'ego' <- name_i
-
-##-------process pre-start-year acquisitions----------
-acqs.pd <- cb$co_acq[cb$co_acq$acquired_on <= sprintf('%d-12-31',startYr-1), ]
-g.d.sub <- aaf$nodeCollapseGraph(g.d.sub, acqs.pd, remove.isolates=T, verbose = T)
-```
-
-```
-## processing acquisitions: 0 ...
-## done.
-```
-
-```r
-net.d.sub <- asNetwork(g.d.sub)
-cat(sprintf('v = %d, e = %d\n',vcount(g.d.sub),ecount(g.d.sub)))
-```
-
-```
-## v = 116, e = 437
-```
-
-```r
-##------------Network Time Period List--------------------
-nl <- list()
-
-for (t in 2:length(periods)) 
-{
-  ## period dates
-  cat(sprintf('\nmaking period %s-%s:\n', periods[t-1],periods[t]))
-  t1 <- sprintf('%d-01-01',periods[t-1]) ## inclusive start date 'YYYY-MM-DD'
-  t2 <- sprintf('%d-12-31',periods[t-1]) ## inclusive end date 'YYYY-MM-DD'
+  name_i <- firms.todo[i]
+  cat(sprintf('\n\n------------ %s -------------\n\n',name_i))
+  periods <- seq(startYr,endYr,yrpd)
+  company.name <- 'company_name_unique'
+  g.base <- g.full  
   
-  ## check if period network file exists (skip if not force overwrite)
-  file.rds <- sprintf('firm_nets_rnr/%s_d%d_y%s.rds',name_i,d,periods[t-1])
-  if (!force.overwrite & file.exists(file.rds)) {
-    cat(sprintf('file exists: %s\nskipping.\n', file.rds))
-    next
+  ## focal firm ego network sample
+  g.d.sub <- igraph::make_ego_graph(graph = g.base, nodes = V(g.base)[V(g.base)$name==name_i], order = d, mode = 'all')[[1]]
+  
+  ## convert to network object
+  net.d.sub <- asNetwork(g.d.sub)
+  net <- net.d.sub
+  net %n% 'ego' <- name_i
+  
+  ##------------------------------------------------------
+  ##-------preprocess parent-subsidiary relationships-----
+  ##----------node collapse like acquisitions-------------
+  ##------------------------------------------------------
+  cat(' collapsing parent-subsidiary relations...')
+  ## load in manually checked parent-subsidiary relations
+  # dfpar.xl <- file.path(sup_data_dir, 'private_firm_financials_all_firm_networks_delete_nodes.xlsx')
+  # dfpar <- read_excel(dfpar.xl,  na = c('','-',"'-"))
+  dfpar.csv <- file.path(sup_data_dir, 'private_firm_financials_all_firm_networks_delete_nodes.csv')
+  dfpar <- read.csv(dfpar.csv, na.strings = c('','-',"'-","--"), stringsAsFactors = F)
+  dfpar <- dfpar[!is.na(dfpar$parent), ]
+  dfpar$parent <- str_to_lower(dfpar$parent)
+  ## merge in parent uuid
+  .parent.uuid <- cb$co[,c('company_name_unique','company_uuid')]
+  names(.parent.uuid) <- c('parent_name_unique', 'parent_uuid') 
+  dfpar <- merge(dfpar[,c('parent','firm')], .parent.uuid, by.x='parent', by.y='parent_name_unique', all.x=T, all.y=F)
+  ## merge in firm uuid
+  .firm.uuid <- cb$co[,c('company_name_unique','company_uuid')]
+  dfpar <- merge(dfpar, .firm.uuid, by.x='firm', by.y='company_name_unique', all.x=T, all.y=F)
+  ## CrunchBase parent relationships to collapse
+  cb.par <- cb$co_parent[,c('company_name_unique','parent_name_unique','parent_org_uuid','org_uuid')]
+  names(cb.par) <- c('firm','parent','parent_uuid','company_uuid')
+  ## combine CrunchBase and manual parent-child mappings
+  par.chi <- rbind(dfpar, cb.par)
+  ## filter both parent, child in full graph
+  gfuuid <- V(g.d.sub)$company_uuid
+  par.chi <- par.chi[which(!is.na(par.chi$parent_uuid) & par.chi$parent_uuid %in% gfuuid 
+                           & !is.na(par.chi$company_uuid) & par.chi$company_uuid %in% gfuuid), ]
+  ## merge in founded_on date of parent
+  par.chi <- merge(par.chi, cb$co[,c('company_name_unique','founded_on')], by.x='parent', by.y='company_name_unique', all.x=T, all.y=F)
+  ## quasi-node collapse subsidiaries to parent nodes
+  par.chi.nc <- data.frame(
+    acquirer_uuid=par.chi$parent_uuid,
+    acquiree_uuid=par.chi$company_uuid,
+    acquired_on=par.chi$founded_on,   ## for parent-subsidiary mapping, just use parent company founded_on date
+    stringsAsFactors = F
+  )
+  g.d.sub <- aaf$nodeCollapseGraph(g.d.sub, par.chi.nc, remove.isolates=T, verbose = T)
+  
+  cat('done.\n')
+  
+  ##_-----------------------------------------------------
+  ##-------process pre-start-year acquisitions------------
+  ##------------------------------------------------------
+  acqs.pd <- cb$co_acq[cb$co_acq$acquired_on <= sprintf('%d-12-31',startYr-1), ]
+  g.d.sub <- aaf$nodeCollapseGraph(g.d.sub, acqs.pd, remove.isolates=T, verbose = T)
+  net.d.sub <- asNetwork(g.d.sub)
+  cat(sprintf('v = %d, e = %d\n',vcount(g.d.sub),ecount(g.d.sub)))
+  
+  # ## subset to firms with employees count > 10
+  # idx.employee <- which( !(V(g.d.sub)$employee_count %in% c('NA','-','1-10')) )
+  # g.d.sub <- igraph::induced.subgraph(g.d.sub, vids = V(g.d.sub)[idx.employee])
+  # cat(sprintf('filtered >10 employee count: v = %d, e = %d\n',vcount(g.d.sub),ecount(g.d.sub)))
+  
+  ##------------Network Time Period List--------------------
+  nl <- list()
+  
+  for (t in 2:length(periods)) 
+  {
+    ## period dates
+    cat(sprintf('\n\nmaking period %s-%s:\n', periods[t-1],periods[t]))
+    t1 <- sprintf('%d-01-01',periods[t-1]) ## inclusive start date 'YYYY-MM-DD'
+    t2 <- sprintf('%d-12-31',periods[t-1]) ## inclusive end date 'YYYY-MM-DD'
+    
+    ## check if period network file exists (skip if not force overwrite)
+    file.rds <- file.path(net_dir,sprintf('%s_d%d_y%s.rds',name_i,d,periods[t-1]))
+    if (!force.overwrite & file.exists(file.rds)) {
+      cat(sprintf('file exists: %s\nskipping.\n', file.rds))
+      next
+    }
+    
+    ## period years indicate [start, end) -- start inclusive; end exclusive 
+    
+    ## 1. Node Collapse acquisitions within period
+    acqs.pd <- cb$co_acq[cb$co_acq$acquired_on >= t1 & cb$co_acq$acquired_on <= t2, ]
+    g.d.sub <- aaf$nodeCollapseGraph(g.d.sub, acqs.pd, verbose = T)
+    
+    ## 2. Subset Period Network
+    nl[[t]] <- aaf$makePdNetwork(asNetwork(g.d.sub), periods[t-1], periods[t], isolates.remove = F) 
+    
+    ## 3. Set Covariates for updated Period Network
+    nl[[t]] <- aaf$setCovariates(nl[[t]], periods[t-1], periods[t],
+                                 acq=cb$co_acq, br=cb$co_br, ipo=cb$co_ipo, 
+                                 rou=cb$co_rou, inv_rou=cb$inv_rou, inv=cb$inv,
+                                 coop=sdc, ih=ih, size=si)
+    
+    ## save each period if large network (would exceed memory as full list of time periods)
+    if (vcount(g.d.sub) >= lg.cutoff) {
+      saveRDS(nl[[t]], file = file.rds)
+      nv <- length(nl[[t]]$val)
+      names(nv)[1] <- as.character(periods[t-1])
+      write.csv(nv, file = file.path(out_dir, sprintf('%s_d%s.csv',name_i,d)),append = TRUE)
+      nl[[t]] <- NULL ## remove from memory
+    }
+    
   }
   
-  ## 1. Node Collapse acquisitions within period
-  acqs.pd <- cb$co_acq[cb$co_acq$acquired_on >= t1 & cb$co_acq$acquired_on <= t2, ]
-  g.d.sub <- aaf$nodeCollapseGraph(g.d.sub, acqs.pd, verbose = T)
-  
-  ## 2. Subset Period Network
-  nl[[t]] <- aaf$makePdNetwork(asNetwork(g.d.sub), periods[t-1], periods[t], isolates.remove = F) 
-  
-  ## 3. Set Covariates for updated Period Network
-  covlist <- c('age','mmc','dist','ipo_status','constraint','similarity','centrality','generalist')
-  nl[[t]] <- aaf$setCovariates(nl[[t]], periods[t-1], periods[t], covlist=covlist,
-                               acq=cb$co_acq,br=cb$co_br,rou=cb$co_rou,ipo=cb$co_ipo)
+  ##---------Small Networks: clean period list and save whole -----------
+  if (vcount(g.d.sub) < lg.cutoff) 
+  {
+    ## ----drop null and skipped periods----
+    nl.bak <- nl
+    nl <- nl[which(sapply(nl, length)>0)]
+    
+    if (length(nl) > 1) {
+      names(nl) <- periods[2:length(periods)]
+    }
+
+    ##--------------- GET TERGM NETS LIST -----------
+    ## only nets with edges > 0
+    if (length(nl) > 1) {
+      nets.all <- nl[2:length(nl)]
+    } else {
+      nets.all <- nl
+    }
+    nets <- nets.all[ which(sapply(nets.all, aaf$getNetEcount) > 0) ]
+    ## record network sizes
+    write.csv(sapply(nets,function(x)length(x$val)), file = file.path(out_dir, sprintf('%s_d%s.csv',name_i,d)))
+    
+    #-------------------------------------------------
+    
+    ## CAREFUL TO OVERWRITE 
+    saveRDS(nets, file = file.path(out_dir, sprintf('%s_d%d.rds',name_i,d)))
+    
+    ## plot covariate summary figures
+    aaf$covSummaryPlot(nets, name_i, net_dir)
+    
+  }
   
 }
 ```
 
 ```
+## 
+## 
+## ------------ qualtrics -------------
+## 
+##  collapsing parent-subsidiary relations...processing acquisitions: 9 ...
+## simplifying edges...done.
+## simplifying edges...done.
+## simplifying edges...done.
+## simplifying edges...done.
+## simplifying edges...done.
+## simplifying edges...done.
+## done.
+## done.
+## processing acquisitions: 0 ...
+## done.
+## v = 168, e = 380
+## 
 ## 
 ## making period 2005-2006:
 ## processing acquisitions: 0 ...
@@ -332,8 +430,53 @@ for (t in 2:length(periods))
 ## computing IPO status contact...done
 ## computing constraint...done
 ## computing inv.log.w.similarity...done
-## computing centralities...done
-## computing Generalist (vs Specialist) Index...done
+## computing centralities...
+```
+
+```
+## done
+## computing Generalist (vs Specialist) Index...
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 460 :Membership vector will be selected based on the lowest modularity
+## score.
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 467 :Modularity calculation with weighted edge betweenness community
+## detection might not make sense -- modularity treats edge weights as
+## similarities while edge betwenness treats them as distances
+```
+
+```
+## done
+## computing Cooperative relations (alliance/JV)...concatenating current cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing current cooperative relations outerproduct matrix...done.
+## concatenating past cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing past cooperative relations outerproduct matrix...done.
+## done
+## computing Employees...done
+## computing Sales...done
+## computing Category Cosine Similarity ...done
+## computing Shared Competitor  ...done
+## computing Shared Investors...
+##  computing public firms common investors... done.
+##  computing private firms common investors... done.
+##  skipping mixed dyad public-private off-diagonal blocks.done
+## 
 ## 
 ## making period 2006-2007:
 ## processing acquisitions: 0 ...
@@ -346,8 +489,53 @@ for (t in 2:length(periods))
 ## computing IPO status contact...done
 ## computing constraint...done
 ## computing inv.log.w.similarity...done
-## computing centralities...done
-## computing Generalist (vs Specialist) Index...done
+## computing centralities...
+```
+
+```
+## done
+## computing Generalist (vs Specialist) Index...
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 460 :Membership vector will be selected based on the lowest modularity
+## score.
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 467 :Modularity calculation with weighted edge betweenness community
+## detection might not make sense -- modularity treats edge weights as
+## similarities while edge betwenness treats them as distances
+```
+
+```
+## done
+## computing Cooperative relations (alliance/JV)...concatenating current cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing current cooperative relations outerproduct matrix...done.
+## concatenating past cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing past cooperative relations outerproduct matrix...done.
+## done
+## computing Employees...done
+## computing Sales...done
+## computing Category Cosine Similarity ...done
+## computing Shared Competitor  ...done
+## computing Shared Investors...
+##  computing public firms common investors... done.
+##  computing private firms common investors... done.
+##  skipping mixed dyad public-private off-diagonal blocks.done
+## 
 ## 
 ## making period 2007-2008:
 ## processing acquisitions: 0 ...
@@ -360,11 +548,57 @@ for (t in 2:length(periods))
 ## computing IPO status contact...done
 ## computing constraint...done
 ## computing inv.log.w.similarity...done
-## computing centralities...done
-## computing Generalist (vs Specialist) Index...done
+## computing centralities...
+```
+
+```
+## done
+## computing Generalist (vs Specialist) Index...
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 460 :Membership vector will be selected based on the lowest modularity
+## score.
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 467 :Modularity calculation with weighted edge betweenness community
+## detection might not make sense -- modularity treats edge weights as
+## similarities while edge betwenness treats them as distances
+```
+
+```
+## done
+## computing Cooperative relations (alliance/JV)...concatenating current cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing current cooperative relations outerproduct matrix...done.
+## concatenating past cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing past cooperative relations outerproduct matrix...done.
+## done
+## computing Employees...done
+## computing Sales...done
+## computing Category Cosine Similarity ...done
+## computing Shared Competitor  ...done
+## computing Shared Investors...
+##  computing public firms common investors... done.
+##  computing private firms common investors... done.
+##  skipping mixed dyad public-private off-diagonal blocks.done
+## 
 ## 
 ## making period 2008-2009:
-## processing acquisitions: 0 ...
+## processing acquisitions: 1 ...
+## simplifying edges...done.
 ## done.
 ## collecting edges and vertices to remove...done.
 ## computing age ...done
@@ -373,11 +607,9 @@ for (t in 2:length(periods))
   |                                                                       
   |                                                                 |   0%
   |                                                                       
-  |================                                                 |  25%
+  |======================                                           |  33%
   |                                                                       
-  |================================                                 |  50%
-  |                                                                       
-  |=================================================                |  75%
+  |===========================================                      |  67%
   |                                                                       
   |=================================================================| 100%
 ## computing MMC outer product matrix...done.
@@ -386,8 +618,55 @@ for (t in 2:length(periods))
 ## computing IPO status contact...done
 ## computing constraint...done
 ## computing inv.log.w.similarity...done
-## computing centralities...done
-## computing Generalist (vs Specialist) Index...done
+## computing centralities...
+```
+
+```
+## done
+## computing Generalist (vs Specialist) Index...
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 460 :Membership vector will be selected based on the lowest modularity
+## score.
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 467 :Modularity calculation with weighted edge betweenness community
+## detection might not make sense -- modularity treats edge weights as
+## similarities while edge betwenness treats them as distances
+```
+
+```
+## done
+## computing Cooperative relations (alliance/JV)...concatenating current cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |================================                                 |  50%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing current cooperative relations outerproduct matrix...done.
+## concatenating past cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing past cooperative relations outerproduct matrix...done.
+## done
+## computing Employees...done
+## computing Sales...done
+## computing Category Cosine Similarity ...done
+## computing Shared Competitor  ...done
+## computing Shared Investors...
+##  computing public firms common investors... done.
+##  computing private firms common investors... done.
+##  skipping mixed dyad public-private off-diagonal blocks.done
+## 
 ## 
 ## making period 2009-2010:
 ## processing acquisitions: 0 ...
@@ -399,13 +678,9 @@ for (t in 2:length(periods))
   |                                                                       
   |                                                                 |   0%
   |                                                                       
-  |=============                                                    |  20%
+  |======================                                           |  33%
   |                                                                       
-  |==========================                                       |  40%
-  |                                                                       
-  |=======================================                          |  60%
-  |                                                                       
-  |====================================================             |  80%
+  |===========================================                      |  67%
   |                                                                       
   |=================================================================| 100%
 ## computing MMC outer product matrix...done.
@@ -414,8 +689,57 @@ for (t in 2:length(periods))
 ## computing IPO status contact...done
 ## computing constraint...done
 ## computing inv.log.w.similarity...done
-## computing centralities...done
-## computing Generalist (vs Specialist) Index...done
+## computing centralities...
+```
+
+```
+## done
+## computing Generalist (vs Specialist) Index...
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 460 :Membership vector will be selected based on the lowest modularity
+## score.
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 467 :Modularity calculation with weighted edge betweenness community
+## detection might not make sense -- modularity treats edge weights as
+## similarities while edge betwenness treats them as distances
+```
+
+```
+## done
+## computing Cooperative relations (alliance/JV)...concatenating current cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |================================                                 |  50%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing current cooperative relations outerproduct matrix...done.
+## concatenating past cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |================================                                 |  50%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing past cooperative relations outerproduct matrix...done.
+## done
+## computing Employees...done
+## computing Sales...done
+## computing Category Cosine Similarity ...done
+## computing Shared Competitor  ...done
+## computing Shared Investors...
+##  computing public firms common investors... done.
+##  computing private firms common investors... done.
+##  skipping mixed dyad public-private off-diagonal blocks.done
+## 
 ## 
 ## making period 2010-2011:
 ## processing acquisitions: 0 ...
@@ -427,13 +751,9 @@ for (t in 2:length(periods))
   |                                                                       
   |                                                                 |   0%
   |                                                                       
-  |=============                                                    |  20%
+  |======================                                           |  33%
   |                                                                       
-  |==========================                                       |  40%
-  |                                                                       
-  |=======================================                          |  60%
-  |                                                                       
-  |====================================================             |  80%
+  |===========================================                      |  67%
   |                                                                       
   |=================================================================| 100%
 ## computing MMC outer product matrix...done.
@@ -442,38 +762,61 @@ for (t in 2:length(periods))
 ## computing IPO status contact...done
 ## computing constraint...done
 ## computing inv.log.w.similarity...done
-## computing centralities...done
-## computing Generalist (vs Specialist) Index...done
-## 
-## making period 2011-2012:
-## processing acquisitions: 0 ...
-## done.
-## collecting edges and vertices to remove...done.
-## computing age ...done
-## computing multi-market contact (branch geographic overlap)...concatenating firm branch markets...
-## 
+## computing centralities...
+```
+
+```
+## done
+## computing Generalist (vs Specialist) Index...
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 460 :Membership vector will be selected based on the lowest modularity
+## score.
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 467 :Modularity calculation with weighted edge betweenness community
+## detection might not make sense -- modularity treats edge weights as
+## similarities while edge betwenness treats them as distances
+```
+
+```
+## done
+## computing Cooperative relations (alliance/JV)...concatenating current cooperative relations...
   |                                                                       
   |                                                                 |   0%
   |                                                                       
-  |=============                                                    |  20%
+  |======================                                           |  33%
   |                                                                       
-  |==========================                                       |  40%
-  |                                                                       
-  |=======================================                          |  60%
-  |                                                                       
-  |====================================================             |  80%
+  |===========================================                      |  67%
   |                                                                       
   |=================================================================| 100%
-## computing MMC outer product matrix...done.
+## done.
+## computing current cooperative relations outerproduct matrix...done.
+## concatenating past cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |================================                                 |  50%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing past cooperative relations outerproduct matrix...done.
 ## done
-## computing distances lag contact...done
-## computing IPO status contact...done
-## computing constraint...done
-## computing inv.log.w.similarity...done
-## computing centralities...done
-## computing Generalist (vs Specialist) Index...done
+## computing Employees...done
+## computing Sales...done
+## computing Category Cosine Similarity ...done
+## computing Shared Competitor  ...done
+## computing Shared Investors...
+##  computing public firms common investors... done.
+##  computing private firms common investors... done.
+##  skipping mixed dyad public-private off-diagonal blocks.done
 ## 
-## making period 2012-2013:
+## 
+## making period 2011-2012:
 ## processing acquisitions: 1 ...
 ## simplifying edges...done.
 ## done.
@@ -484,13 +827,9 @@ for (t in 2:length(periods))
   |                                                                       
   |                                                                 |   0%
   |                                                                       
-  |=============                                                    |  20%
+  |======================                                           |  33%
   |                                                                       
-  |==========================                                       |  40%
-  |                                                                       
-  |=======================================                          |  60%
-  |                                                                       
-  |====================================================             |  80%
+  |===========================================                      |  67%
   |                                                                       
   |=================================================================| 100%
 ## computing MMC outer product matrix...done.
@@ -499,8 +838,138 @@ for (t in 2:length(periods))
 ## computing IPO status contact...done
 ## computing constraint...done
 ## computing inv.log.w.similarity...done
-## computing centralities...done
-## computing Generalist (vs Specialist) Index...done
+## computing centralities...
+```
+
+```
+## done
+## computing Generalist (vs Specialist) Index...
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 460 :Membership vector will be selected based on the lowest modularity
+## score.
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 467 :Modularity calculation with weighted edge betweenness community
+## detection might not make sense -- modularity treats edge weights as
+## similarities while edge betwenness treats them as distances
+```
+
+```
+## done
+## computing Cooperative relations (alliance/JV)...concatenating current cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |======================                                           |  33%
+  |                                                                       
+  |===========================================                      |  67%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing current cooperative relations outerproduct matrix...done.
+## concatenating past cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |======================                                           |  33%
+  |                                                                       
+  |===========================================                      |  67%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing past cooperative relations outerproduct matrix...done.
+## done
+## computing Employees...done
+## computing Sales...done
+## computing Category Cosine Similarity ...done
+## computing Shared Competitor  ...done
+## computing Shared Investors...
+##  computing public firms common investors... done.
+##  computing private firms common investors... done.
+##  skipping mixed dyad public-private off-diagonal blocks.done
+## 
+## 
+## making period 2012-2013:
+## processing acquisitions: 0 ...
+## done.
+## collecting edges and vertices to remove...done.
+## computing age ...done
+## computing multi-market contact (branch geographic overlap)...concatenating firm branch markets...
+## 
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |======================                                           |  33%
+  |                                                                       
+  |===========================================                      |  67%
+  |                                                                       
+  |=================================================================| 100%
+## computing MMC outer product matrix...done.
+## done
+## computing distances lag contact...done
+## computing IPO status contact...done
+## computing constraint...done
+## computing inv.log.w.similarity...done
+## computing centralities...
+```
+
+```
+## done
+## computing Generalist (vs Specialist) Index...
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 460 :Membership vector will be selected based on the lowest modularity
+## score.
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 467 :Modularity calculation with weighted edge betweenness community
+## detection might not make sense -- modularity treats edge weights as
+## similarities while edge betwenness treats them as distances
+```
+
+```
+## done
+## computing Cooperative relations (alliance/JV)...concatenating current cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |======================                                           |  33%
+  |                                                                       
+  |===========================================                      |  67%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing current cooperative relations outerproduct matrix...done.
+## concatenating past cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |======================                                           |  33%
+  |                                                                       
+  |===========================================                      |  67%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing past cooperative relations outerproduct matrix...done.
+## done
+## computing Employees...done
+## computing Sales...done
+## computing Category Cosine Similarity ...done
+## computing Shared Competitor  ...done
+## computing Shared Investors...
+##  computing public firms common investors... done.
+##  computing private firms common investors... done.
+##  skipping mixed dyad public-private off-diagonal blocks.done
+## 
 ## 
 ## making period 2013-2014:
 ## processing acquisitions: 0 ...
@@ -512,13 +981,9 @@ for (t in 2:length(periods))
   |                                                                       
   |                                                                 |   0%
   |                                                                       
-  |=============                                                    |  20%
+  |======================                                           |  33%
   |                                                                       
-  |==========================                                       |  40%
-  |                                                                       
-  |=======================================                          |  60%
-  |                                                                       
-  |====================================================             |  80%
+  |===========================================                      |  67%
   |                                                                       
   |=================================================================| 100%
 ## computing MMC outer product matrix...done.
@@ -527,27 +992,71 @@ for (t in 2:length(periods))
 ## computing IPO status contact...done
 ## computing constraint...done
 ## computing inv.log.w.similarity...done
-## computing centralities...done
-## computing Generalist (vs Specialist) Index...done
+## computing centralities...
+```
+
+```
+## done
+## computing Generalist (vs Specialist) Index...
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 460 :Membership vector will be selected based on the lowest modularity
+## score.
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 467 :Modularity calculation with weighted edge betweenness community
+## detection might not make sense -- modularity treats edge weights as
+## similarities while edge betwenness treats them as distances
+```
+
+```
+## done
+## computing Cooperative relations (alliance/JV)...concatenating current cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |======================                                           |  33%
+  |                                                                       
+  |===========================================                      |  67%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing current cooperative relations outerproduct matrix...done.
+## concatenating past cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |======================                                           |  33%
+  |                                                                       
+  |===========================================                      |  67%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing past cooperative relations outerproduct matrix...done.
+## done
+## computing Employees...done
+## computing Sales...done
+## computing Category Cosine Similarity ...done
+## computing Shared Competitor  ...done
+## computing Shared Investors...
+##  computing public firms common investors... done.
+##  computing private firms common investors... done.
+##  skipping mixed dyad public-private off-diagonal blocks.done
+## 
 ## 
 ## making period 2014-2015:
-## processing acquisitions: 1 ...
-## simplifying edges...done.
+## processing acquisitions: 0 ...
 ## done.
 ## collecting edges and vertices to remove...done.
 ## computing age ...done
 ## computing multi-market contact (branch geographic overlap)...concatenating firm branch markets...
 ## 
   |                                                                       
-  |                                                                 |   0%
-  |                                                                       
-  |=============                                                    |  20%
-  |                                                                       
-  |==========================                                       |  40%
-  |                                                                       
-  |=======================================                          |  60%
-  |                                                                       
-  |====================================================             |  80%
+  |==                                                               |   3%
   |                                                                       
   |=================================================================| 100%
 ## computing MMC outer product matrix...done.
@@ -556,8 +1065,61 @@ for (t in 2:length(periods))
 ## computing IPO status contact...done
 ## computing constraint...done
 ## computing inv.log.w.similarity...done
-## computing centralities...done
-## computing Generalist (vs Specialist) Index...done
+## computing centralities...
+```
+
+```
+## done
+## computing Generalist (vs Specialist) Index...
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 460 :Membership vector will be selected based on the lowest modularity
+## score.
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 467 :Modularity calculation with weighted edge betweenness community
+## detection might not make sense -- modularity treats edge weights as
+## similarities while edge betwenness treats them as distances
+```
+
+```
+## done
+## computing Cooperative relations (alliance/JV)...concatenating current cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |======================                                           |  33%
+  |                                                                       
+  |===========================================                      |  67%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing current cooperative relations outerproduct matrix...done.
+## concatenating past cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |======================                                           |  33%
+  |                                                                       
+  |===========================================                      |  67%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing past cooperative relations outerproduct matrix...done.
+## done
+## computing Employees...done
+## computing Sales...done
+## computing Category Cosine Similarity ...done
+## computing Shared Competitor  ...done
+## computing Shared Investors...
+##  computing public firms common investors... done.
+##  computing private firms common investors... done.
+##  skipping mixed dyad public-private off-diagonal blocks.done
+## 
 ## 
 ## making period 2015-2016:
 ## processing acquisitions: 0 ...
@@ -567,19 +1129,7 @@ for (t in 2:length(periods))
 ## computing multi-market contact (branch geographic overlap)...concatenating firm branch markets...
 ## 
   |                                                                       
-  |                                                                 |   0%
-  |                                                                       
-  |=========                                                        |  14%
-  |                                                                       
-  |===================                                              |  29%
-  |                                                                       
-  |============================                                     |  43%
-  |                                                                       
-  |=====================================                            |  57%
-  |                                                                       
-  |==============================================                   |  71%
-  |                                                                       
-  |========================================================         |  86%
+  |===                                                              |   5%
   |                                                                       
   |=================================================================| 100%
 ## computing MMC outer product matrix...done.
@@ -588,30 +1138,74 @@ for (t in 2:length(periods))
 ## computing IPO status contact...done
 ## computing constraint...done
 ## computing inv.log.w.similarity...done
-## computing centralities...done
-## computing Generalist (vs Specialist) Index...done
+## computing centralities...
+```
+
+```
+## done
+## computing Generalist (vs Specialist) Index...
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 460 :Membership vector will be selected based on the lowest modularity
+## score.
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 467 :Modularity calculation with weighted edge betweenness community
+## detection might not make sense -- modularity treats edge weights as
+## similarities while edge betwenness treats them as distances
+```
+
+```
+## done
+## computing Cooperative relations (alliance/JV)...concatenating current cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |======================                                           |  33%
+  |                                                                       
+  |===========================================                      |  67%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing current cooperative relations outerproduct matrix...done.
+## concatenating past cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |======================                                           |  33%
+  |                                                                       
+  |===========================================                      |  67%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing past cooperative relations outerproduct matrix...done.
+## done
+## computing Employees...done
+## computing Sales...done
+## computing Category Cosine Similarity ...done
+## computing Shared Competitor  ...done
+## computing Shared Investors...
+##  computing public firms common investors... done.
+##  computing private firms common investors... done.
+##  skipping mixed dyad public-private off-diagonal blocks.done
+## 
 ## 
 ## making period 2016-2017:
-## processing acquisitions: 0 ...
+## processing acquisitions: 3 ...
+## simplifying edges...done.
+## simplifying edges...done.
+## simplifying edges...done.
 ## done.
 ## collecting edges and vertices to remove...done.
 ## computing age ...done
 ## computing multi-market contact (branch geographic overlap)...concatenating firm branch markets...
 ## 
   |                                                                       
-  |                                                                 |   0%
-  |                                                                       
-  |=========                                                        |  14%
-  |                                                                       
-  |===================                                              |  29%
-  |                                                                       
-  |============================                                     |  43%
-  |                                                                       
-  |=====================================                            |  57%
-  |                                                                       
-  |==============================================                   |  71%
-  |                                                                       
-  |========================================================         |  86%
+  |==                                                               |   3%
   |                                                                       
   |=================================================================| 100%
 ## computing MMC outer product matrix...done.
@@ -620,8 +1214,60 @@ for (t in 2:length(periods))
 ## computing IPO status contact...done
 ## computing constraint...done
 ## computing inv.log.w.similarity...done
-## computing centralities...done
-## computing Generalist (vs Specialist) Index...done
+## computing centralities...
+```
+
+```
+## done
+## computing Generalist (vs Specialist) Index...
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 460 :Membership vector will be selected based on the lowest modularity
+## score.
+```
+
+```
+## Warning in igraph::edge.betweenness.community(g): At community.c:
+## 467 :Modularity calculation with weighted edge betweenness community
+## detection might not make sense -- modularity treats edge weights as
+## similarities while edge betwenness treats them as distances
+```
+
+```
+## done
+## computing Cooperative relations (alliance/JV)...concatenating current cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |======================                                           |  33%
+  |                                                                       
+  |===========================================                      |  67%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing current cooperative relations outerproduct matrix...done.
+## concatenating past cooperative relations...
+  |                                                                       
+  |                                                                 |   0%
+  |                                                                       
+  |======================                                           |  33%
+  |                                                                       
+  |===========================================                      |  67%
+  |                                                                       
+  |=================================================================| 100%
+## done.
+## computing past cooperative relations outerproduct matrix...done.
+## done
+## computing Employees...done
+## computing Sales...done
+## computing Category Cosine Similarity ...done
+## computing Shared Competitor  ...done
+## computing Shared Investors...
+##  computing public firms common investors... done.
+##  computing private firms common investors... done.
+##  skipping mixed dyad public-private off-diagonal blocks.done
 ```
 
 ```r
